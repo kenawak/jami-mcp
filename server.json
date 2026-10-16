@@ -4,14 +4,19 @@
 	"title": "Jami",
 	"description": "JamiDev payments for Ethiopia: ETB checkouts via Telebirr, M-Pesa and CBE Birr, orders, payouts, webhooks and docs.",
 	"websiteUrl": "https://dev.jami.bio/docs/mcp",
-	"repository": { "url": "https://github.com/kenawak/jami-mcp", "source": "github" },
-	"version": "0.1.0",
+	"repository": {
+		"url": "https://github.com/kenawak/jami-mcp",
+		"source": "github"
+	},
+	"version": "0.2.0",
 	"packages": [
 		{
 			"registryType": "npm",
 			"identifier": "jami-mcp",
-			"version": "0.1.0",
-			"transport": { "type": "stdio" },
+			"version": "0.2.0",
+			"transport": {
+				"type": "stdio"
+			},
 			"environmentVariables": [
 				{
 					"name": "JAMI_TOKEN",

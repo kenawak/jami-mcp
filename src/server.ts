@@ -12,7 +12,7 @@ import { registerWithdrawalTools } from './tools/withdrawals.js';
 export { DEFAULT_DOCS_URL, type JamiMcpConfig } from './config.js';
 
 /** Kept in sync with package.json and server.json (asserted in tests). */
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 function instructions(config: JamiMcpConfig, env: 'test' | 'live' | null): string {
 	const mode =
