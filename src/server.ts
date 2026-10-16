@@ -5,6 +5,7 @@ import { registerPrompts } from './prompts.js';
 import { registerCheckoutTools } from './tools/checkout.js';
 import { registerDocsTools } from './tools/docs.js';
 import { registerOrderTools } from './tools/orders.js';
+import { registerProductTools } from './tools/products.js';
 import { registerWebhookTools } from './tools/webhooks.js';
 import { registerWithdrawalTools } from './tools/withdrawals.js';
 
@@ -46,6 +47,7 @@ export function createJamiServer(config: JamiMcpConfig, options: { fetch?: typeo
 	);
 
 	registerCheckoutTools(server, ctx);
+	registerProductTools(server, ctx);
 	registerOrderTools(server, ctx);
 	registerWithdrawalTools(server, ctx);
 	registerWebhookTools(server, ctx);

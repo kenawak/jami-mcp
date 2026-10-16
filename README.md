@@ -80,7 +80,9 @@ env = { JAMI_TOKEN = "jamidev_test_xxx" }
 
 | Tool | What it does | Needs token |
 | --- | --- | --- |
-| `jami_create_checkout` | Start a checkout for a product (`p_…` token or id), or for any amount with no product (`amount_minor` + `description`). Returns free / redirect / direct. | ✓ |
+| `jami_create_checkout` | Charge a product (`p_…` token or id) or any amount (`amount_minor` + `description`). With `gateway`: pushes the prompt to the buyer's phone. Without: returns a Jami payment link to send them. | ✓ |
+| `jami_create_product` · `jami_update_product` | Create or edit products; each comes back with its public page and `p_…` token. | ✓ |
+| `jami_get_product` · `jami_list_products` | Read the catalog. | ✓ |
 | `jami_get_checkout_status` | Check a session once, with the failure reason when it expired. | ✓ |
 | `jami_wait_for_checkout` | Wait for the buyer to finish, with progress updates. Never hangs: returns `open` at the timeout. | ✓ |
 | `jami_list_orders` | Orders, newest first, paginated and filterable by status. | ✓ |

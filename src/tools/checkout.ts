@@ -95,14 +95,17 @@ export function registerCheckoutTools(server: McpServer, ctx: ToolContext): void
 
 Buyers pay in ETB via Telebirr, M-Pesa or CBE Birr; nothing is added on top. In LIVE mode a "direct" checkout pushes a real payment prompt to the buyer's phone, so only call this when the user actually wants to charge someone.
 
-Two ways to call it:
-  - Product: product_id (p_… token or 24-char id, must be published). amount_minor only for pay-what-you-want products.
+What to charge:
+  - Product: product_id (p_… token or 24-char id, must be published). amount_minor only for flexible-price (pwyw) products.
   - Custom amount: omit product_id, pass amount_minor (≥ 100 = 1.00 ETB) and description (what the buyer sees, ≤ 120 chars).
 
+How to collect it:
+  - Direct push: pass gateway + customer_email + customer_phone. The prompt goes straight to the buyer's phone (kind 'direct').
+  - Payment link: omit gateway. You get a Jami link in checkout_url (kind 'redirect') to send the buyer by SMS/Telegram/email; they pick the method and enter their details there, and can retry a failed attempt until the link expires (30 min). customer_* is optional.
+
 Args:
-  - customer_email: receipt address (required).
-  - customer_phone: Ethiopian number, e.g. "251911223344" or "0911223344". Required for paid products. Sandbox magic numbers: 251900000001 = instant success, 251900000002 = instant failure.
-  - gateway: 'telebirr' | 'mpesa' | 'cbe'. Required for paid products.
+  - customer_email / customer_phone: required for a direct push; optional for a link. Phone like "251911223344" or "0911223344". Sandbox magic numbers: 251900000001 = instant success, 251900000002 = instant failure.
+  - gateway: 'telebirr' | 'mpesa' | 'cbe'. Omit for a payment link.
   - amount_minor: integer santim. 123700 = 1,237.00 ETB.
   - metadata: optional string map (e.g. { "orderId": "1042" }) stored on the order and sent back on order webhooks.
 
@@ -127,7 +130,11 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 							.record(z.string(), z.string().max(500))
 							.optional()
 							.describe('Your own key/values, returned on order webhooks (max 20 keys)'),
-						customer_email: z.string().email().describe('Buyer email; the receipt goes here'),
+						customer_email: z
+							.string()
+							.email()
+							.optional()
+							.describe('Buyer email for the receipt. Required with gateway; optional for a payment link'),
 						customer_phone: z.string().min(9).max(16).optional().describe('Buyer phone, e.g. "251911223344"'),
 						customer_name: z.string().max(120).optional(),
 						customer_external_id: z
@@ -155,6 +162,13 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 					})
 					.strict()
 					.superRefine((v, issue) => {
+						if (v.gateway && (!v.customer_email || !v.customer_phone)) {
+							issue.addIssue({
+								code: 'custom',
+								path: ['customer_phone'],
+								message: 'A direct push (gateway set) needs customer_email and customer_phone. Omit gateway to get a payment link instead.'
+							});
+						}
 						if (v.product_id) {
 							if (v.description) {
 								issue.addIssue({ code: 'custom', path: ['description'], message: 'description is only for custom-amount checkouts — omit product_id to charge a custom amount' });
@@ -186,14 +200,16 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 			},
 			(args) =>
 				guard(async () => {
-					const customer = {
-						email: args.customer_email,
-						...(args.customer_phone ? { phone: args.customer_phone } : {}),
-						...(args.customer_name ? { name: args.customer_name } : {}),
-						...(args.customer_external_id ? { externalId: args.customer_external_id } : {})
-					};
+					const customer = args.customer_email
+						? {
+								email: args.customer_email,
+								...(args.customer_phone ? { phone: args.customer_phone } : {}),
+								...(args.customer_name ? { name: args.customer_name } : {}),
+								...(args.customer_external_id ? { externalId: args.customer_external_id } : {})
+							}
+						: undefined;
 					const shared = {
-						customer,
+						...(customer ? { customer } : {}),
 						...(args.gateway ? { gateway: args.gateway } : {}),
 						...(args.success_url ? { successUrl: args.success_url } : {}),
 						...(args.metadata ? { metadata: args.metadata } : {})
@@ -221,13 +237,15 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 						checkout_url: result.checkoutUrl,
 						order_id: null
 					};
-					const next =
-						result.mode === 'redirect'
-							? `Send the buyer to ${result.checkoutUrl}, then call \`jami_wait_for_checkout\`.`
-							: `The buyer confirms the ${args.gateway ?? 'payment'} prompt on their phone. Call \`jami_wait_for_checkout\` with this session_id.`;
+					if (result.mode === 'redirect') {
+						return ok(
+							structured,
+							`**Payment link ready**${modeLabel(ctx.environment)}\n\n${result.checkoutUrl}\n\nSend it to the buyer. They pick Telebirr, M-Pesa or CBE Birr there and can retry if a payment fails; the link expires in 30 minutes. Call \`jami_wait_for_checkout\` with session \`${result.sessionId}\` to wait for it.`
+						);
+					}
 					return ok(
 						structured,
-						`**Checkout started**${modeLabel(ctx.environment)}\n\n- Session: \`${result.sessionId}\`\n- Mode: ${result.mode}\n\nNext: ${next}`
+						`**Prompt sent**${modeLabel(ctx.environment)}\n\n- Session: \`${result.sessionId}\`\n\nThe buyer confirms the ${args.gateway ?? 'payment'} prompt on their phone. Call \`jami_wait_for_checkout\` with this session_id.`
 					);
 				})
 		);

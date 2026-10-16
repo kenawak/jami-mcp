@@ -29,7 +29,9 @@ export function referenceMarkdown(docsUrl: string): string {
 
 ## Checkout
 - productId accepts the public p_… token or the product's id. The product must be published.
-- No product? Omit productId and send amount (integer santim, ≥ 100) plus description (≤ 120 chars, shown to the buyer). API tokens only. Products themselves are created in the dashboard; the API can't create them.
+- No product? Omit productId and send amount (integer santim, ≥ 100) plus description (≤ 120 chars, shown to the buyer). API tokens only.
+- Products can be created from the API (POST /products, jami.products.create); each has a public page at jami.bio/jamidev/p_….
+- Collecting: pass gateway (+ customer email and phone) to push the prompt to the buyer's phone (mode direct), or omit gateway to get a Jami payment link in checkoutUrl (jami.bio/jamidev/pay/cs_…). On a link the buyer picks the method and can retry a failed attempt until the 30-minute session expires; checkout.session.expired only fires then.
 - metadata (string map, ≤ 20 keys) is stored on the order and returned on order webhooks.
 - Results: free → orderId right away; redirect → send the buyer to checkoutUrl; direct → buyer confirms on their phone, then poll.
 - Sessions expire after 30 minutes. Polling reconciles with the provider, so it always resolves.

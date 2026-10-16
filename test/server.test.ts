@@ -17,16 +17,20 @@ describe('tool registry', () => {
 		const all = await names({ withdrawals: true });
 		expect(all).toEqual([
 			'jami_create_checkout',
+			'jami_create_product',
 			'jami_create_test_webhook',
 			'jami_create_withdrawal',
 			'jami_get_balance',
 			'jami_get_checkout_status',
+			'jami_get_product',
 			'jami_get_withdrawal',
 			'jami_list_orders',
+			'jami_list_products',
 			'jami_list_withdrawals',
 			'jami_quote_withdrawal',
 			'jami_read_doc',
 			'jami_search_docs',
+			'jami_update_product',
 			'jami_verify_webhook',
 			'jami_wait_for_checkout'
 		]);
@@ -34,6 +38,8 @@ describe('tool registry', () => {
 		const readOnly = await names({ readOnly: true, withdrawals: true });
 		expect(readOnly).not.toContain('jami_create_checkout');
 		expect(readOnly).not.toContain('jami_create_withdrawal');
+		expect(readOnly).not.toContain('jami_create_product');
+		expect(readOnly).toContain('jami_list_products');
 
 		const { tools } = await (await connect({ withdrawals: true })).client.listTools();
 		for (const t of tools) {
@@ -189,6 +195,53 @@ describe('checkout', () => {
 		expect(polls).toBe(2);
 		expect(r.structuredContent).toMatchObject({ status: 'completed', order_id: 'ord_9' });
 	}, 10_000);
+});
+
+describe('products and payment links', () => {
+	const raw = {
+		_id: '6710c2e8b1a2f0012ab34c01',
+		checkoutToken: 'p_AbC123',
+		title: 'Calligraphy Course',
+		status: 'published',
+		pricingModel: 'fixed'
+	};
+
+	it('creates a product and hands back its page and token', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			status: 201,
+			body: { product: raw, price: { amount: 250000 }, url: 'https://jami.bio/jamidev/p_AbC123' }
+		}));
+		const r = await call('jami_create_product', { title: 'Calligraphy Course', pricing_model: 'fixed', amount_minor: 250000 });
+		expect(r.structuredContent).toMatchObject({ token: 'p_AbC123', url: 'https://jami.bio/jamidev/p_AbC123', price: '2,500.00 ETB' });
+		expect(calls[0]!.body).toMatchObject({ status: 'published', pricingModel: 'fixed', price: { amount: 250000 } });
+		expect(text(r)).toMatch(/jami\.bio\/jamidev\/p_AbC123/);
+	});
+
+	it('asks for the price a pricing model needs', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN });
+		const r = await call('jami_create_product', { title: 'X', pricing_model: 'pwyw' });
+		expect(r.isError).toBe(true);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('returns a payment link when no gateway is given', async () => {
+		const link = 'https://jami.bio/jamidev/pay/cs_abcdefghijklmnopqrstuvwx';
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { sessionId: SESSION, checkoutUrl: link, mode: 'redirect' }
+		}));
+		const r = await call('jami_create_checkout', { product_id: 'p_AbC123' });
+		expect(r.structuredContent).toMatchObject({ kind: 'redirect', checkout_url: link });
+		expect(calls[0]!.body).toEqual({ productId: 'p_AbC123' });
+		expect(text(r)).toMatch(/Payment link ready/);
+	});
+
+	it('requires the buyer for a direct push', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN });
+		const r = await call('jami_create_checkout', { amount_minor: 5000, description: 'Tip', gateway: 'telebirr' });
+		expect(r.isError).toBe(true);
+		expect(text(r)).toMatch(/Omit gateway to get a payment link/);
+		expect(calls).toHaveLength(0);
+	});
 });
 
 describe('orders', () => {
