@@ -18,7 +18,7 @@ npx -y jami-mcp
 1. Get a token: **Jami dashboard → JamiDev → Developer → API Tokens**. Start with a
    sandbox org — its `jamidev_test_…` token moves no real money.
 2. Add the server to your client (below), with the token as `JAMI_TOKEN`.
-3. Ask: *"Create a sandbox checkout for p_AbC123 with phone 251900000001 and wait for it."*
+3. Ask: *"Charge buyer@example.com 1,237 birr for order #1042 on Telebirr, phone 251900000001, and wait for it."*
 
 No token yet? The server still runs. The docs, withdrawal-quote and webhook tools work
 without one, so you can start building right away.
@@ -80,7 +80,7 @@ env = { JAMI_TOKEN = "jamidev_test_xxx" }
 
 | Tool | What it does | Needs token |
 | --- | --- | --- |
-| `jami_create_checkout` | Start a checkout for a product (`p_…` token or id). Returns free / redirect / direct. | ✓ |
+| `jami_create_checkout` | Start a checkout for a product (`p_…` token or id), or for any amount with no product (`amount_minor` + `description`). Returns free / redirect / direct. | ✓ |
 | `jami_get_checkout_status` | Check a session once, with the failure reason when it expired. | ✓ |
 | `jami_wait_for_checkout` | Wait for the buyer to finish, with progress updates. Never hangs: returns `open` at the timeout. | ✓ |
 | `jami_list_orders` | Orders, newest first, paginated and filterable by status. | ✓ |

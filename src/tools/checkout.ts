@@ -91,16 +91,20 @@ export function registerCheckoutTools(server: McpServer, ctx: ToolContext): void
 			'jami_create_checkout',
 			{
 				title: 'Create checkout',
-				description: `Start a checkout for one of the organization's published products and get back how the buyer pays.
+				description: `Start a checkout and get back how the buyer pays — either for one of the organization's published products, or for ANY amount with no product ("charge this buyer 1,237 ETB for order #1042").
 
-Buyers pay exactly the product's listed price in ETB via Telebirr, M-Pesa or CBE Birr; nothing is added at checkout. In LIVE mode a "direct" checkout pushes a real payment prompt to the buyer's phone, so only call this when the user actually wants to charge someone.
+Buyers pay in ETB via Telebirr, M-Pesa or CBE Birr; nothing is added on top. In LIVE mode a "direct" checkout pushes a real payment prompt to the buyer's phone, so only call this when the user actually wants to charge someone.
+
+Two ways to call it:
+  - Product: product_id (p_… token or 24-char id, must be published). amount_minor only for pay-what-you-want products.
+  - Custom amount: omit product_id, pass amount_minor (≥ 100 = 1.00 ETB) and description (what the buyer sees, ≤ 120 chars).
 
 Args:
-  - product_id: the product's public token (p_…) or its 24-char id. Must be published.
   - customer_email: receipt address (required).
   - customer_phone: Ethiopian number, e.g. "251911223344" or "0911223344". Required for paid products. Sandbox magic numbers: 251900000001 = instant success, 251900000002 = instant failure.
   - gateway: 'telebirr' | 'mpesa' | 'cbe'. Required for paid products.
-  - amount_minor: integer santim, ONLY for pay-what-you-want products (≥ the product minimum). 15000 = 150.00 ETB.
+  - amount_minor: integer santim. 123700 = 1,237.00 ETB.
+  - metadata: optional string map (e.g. { "orderId": "1042" }) stored on the order and sent back on order webhooks.
 
 Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order_id }.
   - free: completed instantly; order_id is set.
@@ -111,7 +115,18 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 						product_id: z
 							.string()
 							.regex(PRODUCT_ID_RE, 'product_id must be a p_… product token or a 24-character id')
-							.describe('Product token (p_…) or id'),
+							.optional()
+							.describe('Product token (p_…) or id. Omit for a custom-amount checkout.'),
+						description: z
+							.string()
+							.min(1)
+							.max(120)
+							.optional()
+							.describe('Custom amount only: what the buyer is paying for, e.g. "Order #1042"'),
+						metadata: z
+							.record(z.string(), z.string().max(500))
+							.optional()
+							.describe('Your own key/values, returned on order webhooks (max 20 keys)'),
 						customer_email: z.string().email().describe('Buyer email; the receipt goes here'),
 						customer_phone: z.string().min(9).max(16).optional().describe('Buyer phone, e.g. "251911223344"'),
 						customer_name: z.string().max(120).optional(),
@@ -126,7 +141,7 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 							.int()
 							.positive()
 							.optional()
-							.describe('Pay-what-you-want amount in integer santim; ignored for fixed-price products'),
+							.describe('Integer santim. Required for custom amounts (≥ 100) and pay-what-you-want products; ignored for fixed prices'),
 						checkout_link: z
 							.string()
 							.regex(/^cl_[A-Za-z0-9_-]+$/)
@@ -138,7 +153,24 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 							.optional()
 							.describe("Answers to the product's checkout fields, keyed by field id")
 					})
-					.strict(),
+					.strict()
+					.superRefine((v, issue) => {
+						if (v.product_id) {
+							if (v.description) {
+								issue.addIssue({ code: 'custom', path: ['description'], message: 'description is only for custom-amount checkouts — omit product_id to charge a custom amount' });
+							}
+							return;
+						}
+						if (v.amount_minor === undefined || v.amount_minor < 100) {
+							issue.addIssue({ code: 'custom', path: ['amount_minor'], message: 'Without product_id, amount_minor is required and must be at least 100 (1.00 ETB)' });
+						}
+						if (!v.description) {
+							issue.addIssue({ code: 'custom', path: ['description'], message: 'Without product_id, description is required (what the buyer is paying for)' });
+						}
+						if (v.checkout_link || v.collected_fields) {
+							issue.addIssue({ code: 'custom', path: ['product_id'], message: 'checkout_link and collected_fields need a product_id' });
+						}
+					}),
 				outputSchema: {
 					session_id: z.string(),
 					kind: z.enum(['free', 'redirect', 'direct']),
@@ -154,20 +186,27 @@ Returns: { session_id, kind: 'free' | 'redirect' | 'direct', checkout_url, order
 			},
 			(args) =>
 				guard(async () => {
-					const params: CreateCheckoutParams = {
-						productId: args.product_id,
-						customer: {
-							email: args.customer_email,
-							...(args.customer_phone ? { phone: args.customer_phone } : {}),
-							...(args.customer_name ? { name: args.customer_name } : {}),
-							...(args.customer_external_id ? { externalId: args.customer_external_id } : {})
-						},
-						...(args.gateway ? { gateway: args.gateway } : {}),
-						...(args.amount_minor !== undefined ? { amount: args.amount_minor } : {}),
-						...(args.checkout_link ? { checkoutLink: args.checkout_link } : {}),
-						...(args.success_url ? { successUrl: args.success_url } : {}),
-						...(args.collected_fields ? { collectedFields: args.collected_fields } : {})
+					const customer = {
+						email: args.customer_email,
+						...(args.customer_phone ? { phone: args.customer_phone } : {}),
+						...(args.customer_name ? { name: args.customer_name } : {}),
+						...(args.customer_external_id ? { externalId: args.customer_external_id } : {})
 					};
+					const shared = {
+						customer,
+						...(args.gateway ? { gateway: args.gateway } : {}),
+						...(args.success_url ? { successUrl: args.success_url } : {}),
+						...(args.metadata ? { metadata: args.metadata } : {})
+					};
+					const params: CreateCheckoutParams = args.product_id
+						? {
+								...shared,
+								productId: args.product_id,
+								...(args.amount_minor !== undefined ? { amount: args.amount_minor } : {}),
+								...(args.checkout_link ? { checkoutLink: args.checkout_link } : {}),
+								...(args.collected_fields ? { collectedFields: args.collected_fields } : {})
+							}
+						: { ...shared, amount: args.amount_minor!, description: args.description! };
 					const result = await ctx.client().createCheckout(params);
 
 					if ('orderId' in result) {

@@ -106,6 +106,37 @@ describe('checkout', () => {
 		expect(calls[0]!.headers.authorization).toBe(`Bearer ${TEST_TOKEN}`);
 	});
 
+	it('charges a custom amount with no product', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { sessionId: SESSION, checkoutUrl: 'https://jami.bio/jamidev/simulate/x', mode: 'redirect' }
+		}));
+		const r = await call('jami_create_checkout', {
+			amount_minor: 123700,
+			description: 'Order #1042',
+			metadata: { orderId: '1042' },
+			customer_email: 'buyer@example.com',
+			customer_phone: '251900000001',
+			gateway: 'telebirr'
+		});
+		expect(r.isError).toBeFalsy();
+		expect(calls[0]!.body).toEqual({
+			amount: 123700,
+			description: 'Order #1042',
+			metadata: { orderId: '1042' },
+			customer: { email: 'buyer@example.com', phone: '251900000001' },
+			gateway: 'telebirr'
+		});
+	});
+
+	it('explains what a custom-amount checkout is missing', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN });
+		const r = await call('jami_create_checkout', { amount_minor: 50, customer_email: 'a@b.co' });
+		expect(r.isError).toBe(true);
+		expect(text(r)).toMatch(/at least 100/);
+		expect(text(r)).toMatch(/description is required/);
+		expect(calls).toHaveLength(0);
+	});
+
 	it('handles free products', async () => {
 		const { call } = await connect({ token: TEST_TOKEN }, () => ({ body: { sessionId: SESSION, orderId: 'ord_1' } }));
 		const r = await call('jami_create_checkout', { product_id: 'p_free', customer_email: 'a@b.co' });

@@ -29,6 +29,8 @@ export function referenceMarkdown(docsUrl: string): string {
 
 ## Checkout
 - productId accepts the public p_… token or the product's id. The product must be published.
+- No product? Omit productId and send amount (integer santim, ≥ 100) plus description (≤ 120 chars, shown to the buyer). API tokens only. Products themselves are created in the dashboard; the API can't create them.
+- metadata (string map, ≤ 20 keys) is stored on the order and returned on order webhooks.
 - Results: free → orderId right away; redirect → send the buyer to checkoutUrl; direct → buyer confirms on their phone, then poll.
 - Sessions expire after 30 minutes. Polling reconciles with the provider, so it always resolves.
 - Failure codes on expired sessions: payment_rejected, payment_failed, payment_canceled, payment_timed_out, initiate_failed, session_expired. Treat unknown codes like payment_failed.
