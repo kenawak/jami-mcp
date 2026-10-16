@@ -1,0 +1,68 @@
+{
+	"name": "jami-mcp",
+	"version": "0.1.0",
+	"description": "Official MCP server for JamiDev — let Claude, Cursor and any MCP client create ETB checkouts, reconcile orders, preview and send payouts, debug webhooks and search the Jami docs.",
+	"type": "module",
+	"bin": {
+		"jami-mcp": "./dist/index.js"
+	},
+	"main": "./dist/server.js",
+	"types": "./dist/server.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/server.d.ts",
+			"default": "./dist/server.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"build": "tsup",
+		"dev": "tsup --watch",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"inspect": "npx -y @modelcontextprotocol/inspector node dist/index.js",
+		"prepublishOnly": "npm run typecheck && npm run test && npm run build"
+	},
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"jami",
+		"jamidev",
+		"payments",
+		"ethiopia",
+		"telebirr",
+		"mpesa",
+		"cbe",
+		"etb",
+		"claude",
+		"cursor"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kenawak/jami-mcp.git"
+	},
+	"homepage": "https://dev.jami.bio/docs/mcp",
+	"bugs": {
+		"email": "support@jami.bio"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.32.1",
+		"jami-sdk": "^0.4.1",
+		"zod": "^4.6.7"
+	},
+	"devDependencies": {
+		"@types/node": "^22.20.5",
+		"tsup": "^8.5.1",
+		"typescript": "^5.9.3",
+		"vitest": "^2.1.9"
+	},
+	"mcpName": "io.github.kenawak/jami-mcp"
+}

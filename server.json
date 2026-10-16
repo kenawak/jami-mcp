@@ -1,0 +1,31 @@
+{
+	"$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+	"name": "io.github.kenawak/jami-mcp",
+	"title": "Jami",
+	"description": "JamiDev payments for Ethiopia: ETB checkouts via Telebirr, M-Pesa and CBE Birr, orders, payouts, webhooks and docs.",
+	"websiteUrl": "https://dev.jami.bio/docs/mcp",
+	"repository": { "url": "https://github.com/kenawak/jami-mcp", "source": "github" },
+	"version": "0.1.0",
+	"packages": [
+		{
+			"registryType": "npm",
+			"identifier": "jami-mcp",
+			"version": "0.1.0",
+			"transport": { "type": "stdio" },
+			"environmentVariables": [
+				{
+					"name": "JAMI_TOKEN",
+					"description": "JamiDev API token (jamidev_test_… for sandbox, jamidev_live_… for production). Optional: docs and offline tools work without it.",
+					"isRequired": false,
+					"isSecret": true
+				},
+				{
+					"name": "JAMI_WEBHOOK_SECRET",
+					"description": "Default webhook subscription secret for the webhook tools.",
+					"isRequired": false,
+					"isSecret": true
+				}
+			]
+		}
+	]
+}
