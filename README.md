@@ -1,10 +1,11 @@
 # jami-mcp
 
 The official [Model Context Protocol](https://modelcontextprotocol.io) server for
-**JamiDev** — [Jami](https://jami.bio)'s payments API for Ethiopia. Connect it to Claude,
+**JamiDev**, the SDK for [Jami](https://jami.bio)'s creator payouts. Connect it to Claude,
 Cursor, VS Code, Codex or any MCP client and your agent can create ETB checkouts, watch
 them settle, reconcile orders, preview and send payouts, debug webhooks, and read the
-Jami docs while it writes your integration.
+Jami docs while it writes your integration. Payments are processed by
+[ArifPay](https://arifpay.net).
 
 Built on the official [`jami-sdk`](https://www.npmjs.com/package/jami-sdk), so every tool
 behaves exactly like the SDK and the REST API.
