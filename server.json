@@ -8,12 +8,12 @@
 		"url": "https://github.com/kenawak/jami-mcp",
 		"source": "github"
 	},
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"packages": [
 		{
 			"registryType": "npm",
 			"identifier": "jami-mcp",
-			"version": "0.2.1",
+			"version": "0.3.0",
 			"transport": {
 				"type": "stdio"
 			},
