@@ -16,20 +16,26 @@ describe('tool registry', () => {
 
 		const all = await names({ withdrawals: true });
 		expect(all).toEqual([
+			'jami_cancel_subscription',
 			'jami_create_checkout',
 			'jami_create_product',
+			'jami_create_subscription_link',
 			'jami_create_test_webhook',
 			'jami_create_withdrawal',
 			'jami_get_balance',
 			'jami_get_checkout_status',
 			'jami_get_product',
+			'jami_get_subscription',
 			'jami_get_withdrawal',
 			'jami_list_orders',
 			'jami_list_products',
+			'jami_list_subscriptions',
 			'jami_list_withdrawals',
 			'jami_quote_withdrawal',
 			'jami_read_doc',
+			'jami_resume_subscription',
 			'jami_search_docs',
+			'jami_simulate_subscription_renewal',
 			'jami_update_product',
 			'jami_verify_webhook',
 			'jami_wait_for_checkout'
@@ -40,6 +46,16 @@ describe('tool registry', () => {
 		expect(readOnly).not.toContain('jami_create_withdrawal');
 		expect(readOnly).not.toContain('jami_create_product');
 		expect(readOnly).toContain('jami_list_products');
+		for (const write of [
+			'jami_create_subscription_link',
+			'jami_cancel_subscription',
+			'jami_resume_subscription',
+			'jami_simulate_subscription_renewal'
+		]) {
+			expect(readOnly).not.toContain(write);
+		}
+		expect(readOnly).toContain('jami_list_subscriptions');
+		expect(readOnly).toContain('jami_get_subscription');
 
 		const { tools } = await (await connect({ withdrawals: true })).client.listTools();
 		for (const t of tools) {
@@ -47,6 +63,15 @@ describe('tool registry', () => {
 			expect(t.description!.length, t.name).toBeGreaterThan(80);
 		}
 		expect(tools.find((t) => t.name === 'jami_create_withdrawal')!.annotations!.destructiveHint).toBe(true);
+		expect(tools.find((t) => t.name === 'jami_cancel_subscription')!.annotations!.destructiveHint).toBe(true);
+		expect(tools.find((t) => t.name === 'jami_resume_subscription')!.annotations).toMatchObject({
+			readOnlyHint: false,
+			idempotentHint: true
+		});
+		for (const t of tools.filter((t) => t.name.includes('subscription'))) {
+			expect(t.description, t.name).toMatch(/Args:/);
+			expect(t.description, t.name).toMatch(/Returns/);
+		}
 	});
 
 	it('keeps VERSION in sync with package.json', () => {
@@ -244,6 +269,270 @@ describe('products and payment links', () => {
 	});
 });
 
+describe('subscriptions', () => {
+	const SUB = 'sub_9f2kQ';
+	const rawSub = {
+		id: SUB,
+		status: 'active',
+		productId: '6710c2e8b1a2f0012ab34c01',
+		productTitle: 'Pro plan',
+		customerId: '6710c2e8b1a2f0012ab34c99',
+		customerEmail: 'a@b.co',
+		customerExternalId: 'user_42',
+		amount: 10000,
+		currency: 'ETB',
+		interval: 'month',
+		intervalCount: 1,
+		currentPeriodStart: '2026-10-23T09:00:00.000Z',
+		currentPeriodEnd: '2026-11-23T09:00:00.000Z',
+		nextChargeAt: '2026-11-23T09:00:00.000Z',
+		cancelAtPeriodEnd: false,
+		canceledAt: null,
+		endedAt: null,
+		cancellationReason: null,
+		failedAttempts: 0,
+		lastFailure: null,
+		metadata: {},
+		livemode: false,
+		createdAt: '2026-10-23T09:00:00.000Z'
+	};
+	const rawCharge = {
+		id: '6710c2e8b1a2f0012ab34d01',
+		sequence: 1,
+		billingReason: 'subscription_create',
+		status: 'succeeded',
+		amount: 10000,
+		currency: 'ETB',
+		periodStart: '2026-10-23T09:00:00.000Z',
+		periodEnd: '2026-11-23T09:00:00.000Z',
+		attempts: 1,
+		failure: null,
+		orderId: '6710c2e8b1a2f0012ab34e01',
+		paidAt: '2026-10-23T09:00:01.000Z',
+		createdAt: '2026-10-23T09:00:00.000Z'
+	};
+
+	it('creates a recurring product', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			status: 201,
+			body: {
+				product: {
+					_id: '6710c2e8b1a2f0012ab34c01',
+					checkoutToken: 'p_Pro',
+					title: 'Pro plan',
+					status: 'published',
+					pricingModel: 'fixed',
+					productType: 'recurring',
+					billingInterval: 'month',
+					intervalCount: 3
+				},
+				price: { amount: 10000 },
+				url: 'https://jami.bio/jamidev/p_Pro'
+			}
+		}));
+		const r = await call('jami_create_product', {
+			title: 'Pro plan',
+			pricing_model: 'fixed',
+			amount_minor: 10000,
+			product_type: 'recurring',
+			billing_interval: 'month',
+			interval_count: 3
+		});
+		expect(r.isError).toBeFalsy();
+		expect(calls[0]!.body).toEqual({
+			status: 'published',
+			title: 'Pro plan',
+			productType: 'recurring',
+			pricingModel: 'fixed',
+			price: { amount: 10000 },
+			billingInterval: 'month',
+			intervalCount: 3
+		});
+		expect(r.structuredContent).toMatchObject({
+			product_type: 'recurring',
+			billing_interval: 'month',
+			interval_count: 3,
+			price: '100.00 ETB every 3 months'
+		});
+		expect(text(r)).toMatch(/jami_create_subscription_link/);
+	});
+
+	it('checks recurring product rules before calling the API', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN });
+		const base = { title: 'Pro', pricing_model: 'fixed', amount_minor: 10000 };
+		for (const args of [
+			{ ...base, product_type: 'recurring' },
+			{ ...base, product_type: 'recurring', billing_interval: 'year', interval_count: 2 },
+			{ ...base, product_type: 'recurring', billing_interval: 'week', amount_minor: 50 },
+			{ title: 'Tips', pricing_model: 'pwyw', minimum_amount_minor: 100, product_type: 'recurring', billing_interval: 'month' },
+			{ ...base, billing_interval: 'month' }
+		]) {
+			expect((await call('jami_create_product', args)).isError, JSON.stringify(args)).toBe(true);
+		}
+		expect(calls).toHaveLength(0);
+	});
+
+	it('creates a subscribe link and says nothing is charged yet', async () => {
+		const link = { id: 'sc_abc', url: 'https://jami.bio/jamidev/subscribe/sc_abc', expiresAt: '2026-10-24T09:00:00.000Z', livemode: false };
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, (c) =>
+			c.url === `${API}/subscriptions/checkout` ? { status: 201, body: link } : undefined
+		);
+		const r = await call('jami_create_subscription_link', {
+			product_id: 'p_Pro',
+			customer_email: 'a@b.co',
+			customer_external_id: 'user_42',
+			success_url: 'https://app.example/billing',
+			metadata: { plan: 'pro' }
+		});
+		expect(r.isError).toBeFalsy();
+		expect(calls[0]).toMatchObject({
+			method: 'POST',
+			body: {
+				productId: 'p_Pro',
+				customer: { email: 'a@b.co', externalId: 'user_42' },
+				successUrl: 'https://app.example/billing',
+				metadata: { plan: 'pro' }
+			}
+		});
+		expect(r.structuredContent).toEqual({ checkout_id: 'sc_abc', url: link.url, expires_at: link.expiresAt, livemode: false });
+		expect(text(r)).toMatch(/wallet PIN/);
+	});
+
+	it('explains a 409 product_unavailable', async () => {
+		const { call, text } = await connect({ token: TEST_TOKEN }, () => ({
+			status: 409,
+			body: { error: 'Product is not published', code: 'product_unavailable' }
+		}));
+		const r = await call('jami_create_subscription_link', { product_id: 'p_Draft' });
+		expect(r.isError).toBe(true);
+		expect(text(r)).toMatch(/409 product_unavailable/);
+		expect(text(r)).toMatch(/published recurring product/);
+	});
+
+	it('lists with filters and paginates', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { items: [rawSub], total: 21, page: 1, limit: 20 }
+		}));
+		const r = await call('jami_list_subscriptions', { status: 'active', product_id: 'p_Pro', customer_external_id: 'user_42' });
+		expect(calls[0]!.url).toBe(`${API}/subscriptions?status=active&productId=p_Pro&customerExternalId=user_42&page=1&limit=20`);
+		expect(r.structuredContent).toMatchObject({
+			total: 21,
+			has_more: true,
+			next_page: 2,
+			subscriptions: [{ subscription_id: SUB, amount: '100.00 ETB', cadence: 'monthly', customer_external_id: 'user_42' }]
+		});
+		expect(text(r)).toMatch(/\| `sub_9f2kQ` \| active \| Pro plan \| 100.00 ETB monthly/);
+	});
+
+	it('gets a subscription with its charges', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { subscription: rawSub, charges: [rawCharge] }
+		}));
+		const r = await call('jami_get_subscription', { subscription_id: SUB });
+		expect(calls[0]!.url).toBe(`${API}/subscriptions/${SUB}`);
+		expect(r.structuredContent).toMatchObject({
+			subscription: { subscription_id: SUB, status: 'active' },
+			charges: [{ charge_id: rawCharge.id, sequence: 1, status: 'succeeded', order_id: rawCharge.orderId }]
+		});
+	});
+
+	it('rejects a malformed subscription id before calling the API', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN });
+		expect((await call('jami_get_subscription', { subscription_id: 'nope' })).isError).toBe(true);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('cancels at period end by default', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { subscription: { ...rawSub, cancelAtPeriodEnd: true, nextChargeAt: null } }
+		}));
+		const r = await call('jami_cancel_subscription', { subscription_id: SUB });
+		expect(calls[0]).toMatchObject({ method: 'POST', url: `${API}/subscriptions/${SUB}/cancel`, body: { atPeriodEnd: true } });
+		expect(r.structuredContent).toMatchObject({ cancel_at_period_end: true, next_charge_at: null });
+		expect(text(r)).toMatch(/set to end/);
+	});
+
+	it('cancels immediately when asked', async () => {
+		const { call, calls } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { subscription: { ...rawSub, status: 'canceled', cancellationReason: 'merchant', endedAt: '2026-10-23T10:00:00.000Z' } }
+		}));
+		const r = await call('jami_cancel_subscription', { subscription_id: SUB, at_period_end: false });
+		expect(calls[0]!.body).toEqual({ atPeriodEnd: false });
+		expect(r.structuredContent).toMatchObject({ status: 'canceled', cancellation_reason: 'merchant' });
+	});
+
+	it('asks the user to confirm a cancel when the client supports elicitation', async () => {
+		const { client, call, calls } = await connect({ token: LIVE_TOKEN }, () => ({ body: { subscription: rawSub } }), {
+			capabilities: { elicitation: {} }
+		});
+		let asked = '';
+		client.setRequestHandler(ElicitRequestSchema, async (req) => {
+			asked = req.params.message;
+			return { action: 'decline' };
+		});
+		const r = await call('jami_cancel_subscription', { subscription_id: SUB });
+		expect(asked).toMatch(/Cancel subscription sub_9f2kQ at the end of the current period/);
+		expect(r.isError).toBe(true);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('cancels after the user confirms', async () => {
+		const { client, call, calls } = await connect({ token: LIVE_TOKEN }, () => ({ body: { subscription: rawSub } }), {
+			capabilities: { elicitation: {} }
+		});
+		client.setRequestHandler(ElicitRequestSchema, async () => ({ action: 'accept', content: { confirm: true } }));
+		const r = await call('jami_cancel_subscription', { subscription_id: SUB });
+		expect(r.isError).toBeFalsy();
+		expect(calls).toHaveLength(1);
+	});
+
+	it('resumes a scheduled cancel', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({ body: { subscription: rawSub } }));
+		const r = await call('jami_resume_subscription', { subscription_id: SUB });
+		expect(calls[0]).toMatchObject({ method: 'POST', url: `${API}/subscriptions/${SUB}/resume` });
+		expect(r.structuredContent).toMatchObject({ subscription_id: SUB, cancel_at_period_end: false });
+		expect(text(r)).toMatch(/Next charge/);
+	});
+
+	it('explains why a customer cancel cannot be resumed', async () => {
+		const { call, text } = await connect({ token: TEST_TOKEN }, () => ({
+			status: 409,
+			body: { error: 'The customer canceled this subscription', code: 'not_allowed' }
+		}));
+		const r = await call('jami_resume_subscription', { subscription_id: SUB });
+		expect(r.isError).toBe(true);
+		expect(text(r)).toMatch(/409 not_allowed/);
+		expect(text(r)).toMatch(/customer canceled/);
+	});
+
+	it('simulates a renewal in sandbox', async () => {
+		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
+			body: { result: 'retry_scheduled', subscription: { ...rawSub, status: 'past_due', failedAttempts: 1 } }
+		}));
+		const r = await call('jami_simulate_subscription_renewal', { subscription_id: SUB, outcome: 'failure' });
+		expect(calls[0]).toMatchObject({ method: 'POST', url: `${API}/subscriptions/${SUB}/simulate-renewal`, body: { outcome: 'failure' } });
+		expect(r.structuredContent).toMatchObject({ result: 'retry_scheduled', subscription: { status: 'past_due', failed_attempts: 1 } });
+		expect(text(r)).toMatch(/retry_scheduled/);
+	});
+
+	it('refuses to simulate with a live token, without calling the API', async () => {
+		const { call, calls, text } = await connect({ token: LIVE_TOKEN });
+		const r = await call('jami_simulate_subscription_renewal', { subscription_id: SUB });
+		expect(r.isError).toBe(true);
+		expect(text(r)).toMatch(/sandbox/);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('mentions the PIN approval model in the instructions and reference', async () => {
+		const { client } = await connect({ token: TEST_TOKEN });
+		expect(client.getInstructions()).toMatch(/never start charging a wallet on its own/);
+		const ref = await client.readResource({ uri: 'jami://reference' });
+		const md = (ref.contents[0] as { text: string }).text;
+		expect(md).toMatch(/## Subscriptions/);
+		expect(md).toMatch(/subscription\.payment_failed/);
+	});
+});
+
 describe('orders', () => {
 	it('paginates and flattens populated refs', async () => {
 		const { call, calls, text } = await connect({ token: TEST_TOKEN }, () => ({
@@ -370,6 +659,27 @@ describe('webhooks', () => {
 		const r = await call('jami_create_test_webhook', { type: 'order.created', target_url: 'http://localhost:3000/hook' });
 		expect(r.structuredContent).toMatchObject({ delivery_status: 200 });
 		expect(calls[0]!.headers['X-JamiDev-Signature']).toMatch(/^t=\d+,v1=/);
+	});
+
+	it.each([
+		'subscription.created',
+		'subscription.renewed',
+		'subscription.payment_failed',
+		'subscription.updated',
+		'subscription.canceled'
+	])('generates and verifies a %s delivery', async (type) => {
+		const { call } = await connect({ webhookSecret: secret });
+		const made = await call('jami_create_test_webhook', { type });
+		expect(made.isError).toBeFalsy();
+		const { payload, signature } = made.structuredContent as { payload: string; signature: string };
+		const event = JSON.parse(payload);
+		expect(event.data).toMatchObject({ id: expect.stringMatching(/^sub_/), amount: 10000, interval: 'month' });
+		if (type === 'subscription.payment_failed') {
+			expect(event.data).toMatchObject({ status: 'past_due', charge: { status: 'failed' }, nextRetryAt: expect.any(String) });
+		}
+		if (type === 'subscription.updated') expect(event.data).toMatchObject({ change: 'cancel_scheduled', changedBy: 'customer' });
+		const verified = await call('jami_verify_webhook', { payload, signature });
+		expect(verified.structuredContent).toMatchObject({ valid: true, event_type: type });
 	});
 
 	it('drops target_url when delivery is disabled (HTTP mode)', async () => {

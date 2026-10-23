@@ -65,11 +65,20 @@ export function describeError(err: unknown): string {
 				);
 			case 404:
 				return withRequestId(
-					`Not found (404): ${err.message}. Check the id — product_id must be a published product in this token's organization (its p_… token or its id), and session/withdrawal ids come from earlier tool results.`,
+					`Not found (404): ${err.message}. Check the id — product_id must be a published product in this token's organization (its p_… token or its id), and session/withdrawal/subscription ids come from earlier tool results.`,
 					err
 				);
 			case 403:
 				return withRequestId(`Forbidden (403): ${err.message}.`, err);
+			case 409: {
+				const next =
+					err.code === 'product_unavailable'
+						? ' The plan must be a published recurring product with a valid price — check it with jami_get_product.'
+						: err.code === 'not_allowed'
+							? " The subscription's state doesn't allow this (e.g. it already ended, the customer canceled it, or it isn't a sandbox subscription)."
+							: '';
+				return withRequestId(`Conflict (409${err.code ? ` ${err.code}` : ''}): ${err.message}.${next}`, err);
+			}
 		}
 		if (err.code === 'invalid_token') return new MissingTokenError('malformed').message;
 		if (err.status && err.status >= 500) {
