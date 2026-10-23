@@ -12,16 +12,81 @@ const EVENT_TYPES = [
 	'benefit.granted',
 	'checkout.session.expired',
 	'withdrawal.paid',
-	'withdrawal.failed'
+	'withdrawal.failed',
+	'subscription.created',
+	'subscription.renewed',
+	'subscription.payment_failed',
+	'subscription.updated',
+	'subscription.canceled'
 ] as const satisfies readonly JamiWebhookEventType[];
+
+// Compile-time check that the list above covers every event the SDK knows.
+type MissingEventTypes = Exclude<JamiWebhookEventType, (typeof EVENT_TYPES)[number]>;
+const _allEventsCovered: [MissingEventTypes] extends [never] ? true : MissingEventTypes = true;
+void _allEventsCovered;
 
 const objectId = () => randomBytes(12).toString('hex');
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A subscription as `subscription.*` events carry it (same shape as the API's Subscription object). */
+function sampleSubscription(now: Date, livemode: boolean, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	const start = new Date(now.getTime() - 30 * DAY_MS).toISOString();
+	const end = now.toISOString();
+	return {
+		id: `sub_${randomBytes(9).toString('base64url')}`,
+		status: 'active',
+		productId: objectId(),
+		productTitle: 'Pro plan',
+		customerId: objectId(),
+		customerEmail: 'subscriber@example.com',
+		customerExternalId: 'user_42',
+		amount: 10000,
+		currency: 'ETB',
+		interval: 'month',
+		intervalCount: 1,
+		currentPeriodStart: start,
+		currentPeriodEnd: end,
+		nextChargeAt: end,
+		cancelAtPeriodEnd: false,
+		canceledAt: null,
+		endedAt: null,
+		cancellationReason: null,
+		failedAttempts: 0,
+		lastFailure: null,
+		metadata: {},
+		livemode,
+		createdAt: start,
+		...overrides
+	};
+}
+
+/** One billing period's charge, as `subscription.*` events carry it. */
+function sampleCharge(sequence: number, periodStart: string, periodEnd: string, failed: boolean): Record<string, unknown> {
+	return {
+		id: objectId(),
+		sequence,
+		billingReason: sequence === 1 ? 'subscription_create' : 'subscription_cycle',
+		status: failed ? 'failed' : 'succeeded',
+		amount: 10000,
+		currency: 'ETB',
+		periodStart,
+		periodEnd,
+		attempts: 1,
+		failure: failed ? { code: 'insufficient_funds', message: "The payer's Jami wallet balance is too low" } : null,
+		orderId: failed ? null : objectId(),
+		paidAt: failed ? null : periodStart,
+		createdAt: periodStart
+	};
+}
+
 /** Realistic `data` for each event, matching what the API sends. */
-function sampleData(type: (typeof EVENT_TYPES)[number]): Record<string, unknown> {
+function sampleData(type: (typeof EVENT_TYPES)[number], livemode = false): Record<string, unknown> {
 	const sessionId = objectId();
 	const orderId = objectId();
-	const now = new Date().toISOString();
+	const date = new Date();
+	const now = date.toISOString();
+	const nextPeriod = new Date(date.getTime() + 30 * DAY_MS).toISOString();
 	switch (type) {
 		case 'order.created':
 		case 'order.completed':
@@ -74,6 +139,48 @@ function sampleData(type: (typeof EVENT_TYPES)[number]): Record<string, unknown>
 				...(type === 'withdrawal.failed' ? { note: 'Gateway payout failed' } : {})
 			};
 		}
+		case 'subscription.created':
+			return {
+				...sampleSubscription(date, livemode, {
+					currentPeriodStart: now,
+					currentPeriodEnd: nextPeriod,
+					nextChargeAt: nextPeriod,
+					createdAt: now
+				}),
+				charge: sampleCharge(1, now, nextPeriod, false)
+			};
+		case 'subscription.renewed':
+			return {
+				...sampleSubscription(date, livemode, { currentPeriodStart: now, currentPeriodEnd: nextPeriod, nextChargeAt: nextPeriod }),
+				charge: sampleCharge(2, now, nextPeriod, false)
+			};
+		case 'subscription.payment_failed': {
+			const retry = new Date(date.getTime() + DAY_MS).toISOString();
+			return {
+				...sampleSubscription(date, livemode, {
+					status: 'past_due',
+					failedAttempts: 1,
+					nextChargeAt: retry,
+					lastFailure: { code: 'insufficient_funds', message: "The payer's Jami wallet balance is too low", at: now }
+				}),
+				charge: sampleCharge(2, now, nextPeriod, true),
+				nextRetryAt: retry
+			};
+		}
+		case 'subscription.updated':
+			return {
+				...sampleSubscription(date, livemode, { cancelAtPeriodEnd: true, nextChargeAt: null }),
+				change: 'cancel_scheduled',
+				changedBy: 'customer'
+			};
+		case 'subscription.canceled':
+			return sampleSubscription(date, livemode, {
+				status: 'canceled',
+				nextChargeAt: null,
+				canceledAt: now,
+				endedAt: now,
+				cancellationReason: 'customer'
+			});
 	}
 }
 
@@ -203,7 +310,7 @@ Returns: { payload, signature, headers, curl } — the exact body and X-JamiDev-
 					type: args.type,
 					created: new Date().toISOString(),
 					livemode: args.livemode,
-					data: { ...sampleData(args.type), ...(args.data ?? {}) }
+					data: { ...sampleData(args.type, args.livemode), ...(args.data ?? {}) }
 				};
 				const payload = JSON.stringify(event);
 				const signature = sign(payload, key, Math.floor(Date.now() / 1000));
