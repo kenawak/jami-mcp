@@ -3,8 +3,8 @@
 The official [Model Context Protocol](https://modelcontextprotocol.io) server for
 **JamiDev**, the SDK for [Jami](https://jami.bio)'s creator payouts. Connect it to Claude,
 Cursor, VS Code, Codex or any MCP client and your agent can create ETB checkouts, watch
-them settle, reconcile orders, preview and send payouts, debug webhooks, and read the
-Jami docs while it writes your integration. Payments are processed by
+them settle, reconcile orders, run Jami wallet subscriptions, preview and send payouts,
+debug webhooks, and read the Jami docs while it writes your integration. Payments are processed by
 [ArifPay](https://arifpay.net).
 
 Built on the official [`jami-sdk`](https://www.npmjs.com/package/jami-sdk), so every tool
@@ -82,11 +82,16 @@ env = { JAMI_TOKEN = "jamidev_test_xxx" }
 | Tool | What it does | Needs token |
 | --- | --- | --- |
 | `jami_create_checkout` | Charge a product (`p_…` token or id) or any amount (`amount_minor` + `description`). With `gateway`: pushes the prompt to the buyer's phone. Without: returns a Jami payment link to send them. | ✓ |
-| `jami_create_product` · `jami_update_product` | Create or edit products; each comes back with its public page and `p_…` token. | ✓ |
+| `jami_create_product` · `jami_update_product` | Create or edit products; each comes back with its public page and `p_…` token. `product_type: "recurring"` + `billing_interval` makes a subscription plan. | ✓ |
 | `jami_get_product` · `jami_list_products` | Read the catalog. | ✓ |
 | `jami_get_checkout_status` | Check a session once, with the failure reason when it expired. | ✓ |
 | `jami_wait_for_checkout` | Wait for the buyer to finish, with progress updates. Never hangs: returns `open` at the timeout. | ✓ |
 | `jami_list_orders` | Orders, newest first, paginated and filterable by status. | ✓ |
+| `jami_create_subscription_link` | A single-use subscribe link (24 h) for a recurring product. The payer approves on Jami with their wallet PIN; nothing is charged before that. | ✓ |
+| `jami_list_subscriptions` · `jami_get_subscription` | Subscriptions filtered by status, plan or your user id; one subscription with its charges and failure reasons. | ✓ |
+| `jami_cancel_subscription` | Stop charging, at the period end by default or right away. Asks you to confirm when the client supports it. | ✓ |
+| `jami_resume_subscription` | Undo a cancel you scheduled, before the period ends. A cancel the customer made can't be undone. | ✓ |
+| `jami_simulate_subscription_renewal` | Sandbox only: run the next renewal now (success or failure) to test your `subscription.*` webhooks. | ✓ |
 | `jami_get_balance` | Withdrawable earnings and whether the org can withdraw. | ✓ |
 | `jami_quote_withdrawal` | Fee, tax and net for an amount, plus auto-pay and cap checks. Offline. | — |
 | `jami_create_withdrawal` | Pay out to Telebirr, M-Pesa or CBE Birr. **Opt-in** (see Safety). | ✓ |
@@ -111,6 +116,11 @@ The defaults are set so an agent can't move money by accident.
   `JAMI_ENABLE_WITHDRAWALS=true`). When they're on, clients that support elicitation ask
   you to confirm each payout, and every payout needs an `idempotency_key`, so a retry
   can never pay twice. Sandbox tokens are refused before any request is made.
+- **Subscriptions need the payer's PIN.** `jami_create_subscription_link` only proposes a
+  subscription. The payer signs in to Jami and approves it with their wallet PIN, so an API
+  key (and so an agent) can never start charging someone's wallet on its own.
+  `jami_cancel_subscription` asks you to confirm when the client supports elicitation, and
+  `jami_simulate_subscription_renewal` refuses live tokens before any request is made.
 - **`--read-only`** registers only the tools that read data. Use it for reporting agents.
 - **Live mode is announced.** With a `jamidev_live_` token, the server tells the agent
   that checkouts charge real buyers and to confirm first.
