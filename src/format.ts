@@ -18,6 +18,14 @@ export function formatEtb(minor: number | null | undefined): string {
 	return `${etb.format(minor / 100)} ETB`;
 }
 
+/** `('month', 1)` → `"monthly"`, `('week', 2)` → `"every 2 weeks"`. */
+export function formatCadence(interval: string | null | undefined, count: number | null | undefined = 1): string {
+	if (!interval) return '—';
+	const n = count ?? 1;
+	if (n === 1) return interval === 'week' ? 'weekly' : interval === 'year' ? 'yearly' : interval === 'month' ? 'monthly' : `every ${interval}`;
+	return `every ${n} ${interval}s`;
+}
+
 /** `0.07` → `"7%"`, `0.075` → `"7.5%"` (no float noise). */
 export function formatPercent(rate: number): string {
 	return `${Number((rate * 100).toFixed(2))}%`;

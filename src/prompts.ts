@@ -39,8 +39,18 @@ export function referenceMarkdown(docsUrl: string): string {
 
 ## Webhooks
 - Header X-JamiDev-Signature: t=<unix>,v1=<hex>, where v1 = HMAC-SHA256(secret, "{t}.{rawBody}"). Verify the raw body; reject if older than 300s.
-- Events: order.created, order.completed, benefit.granted, checkout.session.expired, withdrawal.paid, withdrawal.failed. Order, benefit and session events carry data.sessionId.
+- Events: order.created, order.completed, benefit.granted, checkout.session.expired, withdrawal.paid, withdrawal.failed, subscription.created, subscription.renewed, subscription.payment_failed, subscription.updated, subscription.canceled. Order, benefit and session events carry data.sessionId.
+- subscription.* data is the subscription itself, plus charge (created / renewed / payment_failed), nextRetryAt (payment_failed; null = last try) and change + changedBy (updated). Subscription charges don't send order.* events. Existing webhook endpoints must opt in to subscription.* events.
 - Reply 2xx within 10s. Retries: 1m → 5m → 30m → 2h → 12h (5 attempts). Deduplicate on event.id.
+
+## Subscriptions
+- A subscription charges a fixed amount from a Jami user's **wallet** every week, month or year until either side cancels.
+- The plan is a recurring product: productType 'recurring', pricingModel 'fixed', billingInterval week | month | year, intervalCount (≤ 52 weeks, ≤ 12 months, 1 year), price 100–1,000,000 santim. The interval is locked; a price change only affects new subscribers.
+- Approval with PIN: an API key can only propose a subscription (POST /subscriptions/checkout → a single-use sc_… link, valid 24h). The payer signs in to Jami, reviews the plan and approves with their 6-digit wallet PIN; the first period is charged in that same step. An API key can never charge a wallet on its own, change the amount, or undo a cancel the customer made.
+- Renewals run automatically. A failed renewal is retried 1, 3 and 7 days later (status past_due); after the last failure the subscription is canceled with cancellationReason payment_failed. Charge failure codes: insufficient_funds, kyc_required, payer_unavailable, simulated_failure, internal_error.
+- Cancel defaults to the period end (no more charges; ends at currentPeriodEnd); atPeriodEnd false ends it now. No refunds. Resume only undoes a cancel the org scheduled.
+- Each paid period credits the org's Jami wallet like a sale; the usual withdrawal fee applies at withdrawal.
+- Sandbox subscriptions never move money; POST /subscriptions/{id}/simulate-renewal (jami_simulate_subscription_renewal) runs the next renewal now.
 
 ## Rate limits
 - POST /checkout with a token: a per-token bucket (burst 200, refilling 20/s). Without a token (hosted checkout page): 40 per 5 minutes per IP.
