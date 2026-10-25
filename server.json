@@ -2,18 +2,18 @@
 	"$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
 	"name": "io.github.kenawak/jami-mcp",
 	"title": "Jami",
-	"description": "JamiDev payments for Ethiopia: ETB checkouts via Telebirr, M-Pesa and CBE Birr, orders, payouts, webhooks and docs.",
+	"description": "Jami creator payouts for your agent: ETB checkouts, orders, payouts, webhooks. Powered by ArifPay.",
 	"websiteUrl": "https://dev.jami.bio/docs/mcp",
 	"repository": {
 		"url": "https://github.com/kenawak/jami-mcp",
 		"source": "github"
 	},
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"packages": [
 		{
 			"registryType": "npm",
 			"identifier": "jami-mcp",
-			"version": "0.2.0",
+			"version": "0.2.1",
 			"transport": {
 				"type": "stdio"
 			},

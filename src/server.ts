@@ -12,7 +12,7 @@ import { registerWithdrawalTools } from './tools/withdrawals.js';
 export { DEFAULT_DOCS_URL, type JamiMcpConfig } from './config.js';
 
 /** Kept in sync with package.json and server.json (asserted in tests). */
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 
 function instructions(config: JamiMcpConfig, env: 'test' | 'live' | null): string {
 	const mode =
@@ -22,7 +22,7 @@ function instructions(config: JamiMcpConfig, env: 'test' | 'live' | null): strin
 				? 'Connected to a SANDBOX organization (jamidev_test_ token): payments are simulated. Phone 251900000001 succeeds instantly, 251900000002 fails.'
 				: 'No API token configured: docs, withdrawal quotes and webhook tools work; account tools will explain how to add JAMI_TOKEN.';
 	return [
-		'Jami (JamiDev) is the payments API for Ethiopia: ETB checkouts via Telebirr, M-Pesa and CBE Birr, signed webhooks, and payouts.',
+		"JamiDev is the SDK for Jami's creator payouts: ETB checkouts via Telebirr, M-Pesa and CBE Birr, signed webhooks, and withdrawals like any Jami creator. Payments are processed by ArifPay.",
 		mode,
 		'All amounts are integer santim (ETB minor units): 10000 = 100.00 ETB. Parameters that take money end in _minor.',
 		'When writing integration code, check jami_search_docs / jami_read_doc first — they serve the live docs. The jami://reference resource has fees, limits and failure codes.',
